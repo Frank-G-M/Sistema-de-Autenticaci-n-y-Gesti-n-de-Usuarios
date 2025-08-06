@@ -1,4 +1,4 @@
-package com.example.auths3.web;
+package com.example.auths3.controller;
 
 import com.example.auths3.dto.UserDTO;
 import com.example.auths3.model.Role;
@@ -7,7 +7,6 @@ import com.example.auths3.repository.RepositoryUser;
 import com.example.auths3.repository.RoleRepository;
 import com.example.auths3.security.JwtTokenProvider;
 import com.example.auths3.service.UserMapper;
-import com.example.auths3.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -17,7 +16,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
