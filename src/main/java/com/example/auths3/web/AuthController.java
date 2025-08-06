@@ -1,20 +1,23 @@
 package com.example.auths3.web;
 
+import com.example.auths3.dto.UserDTO;
 import com.example.auths3.model.Role;
 import com.example.auths3.model.User;
 import com.example.auths3.repository.RepositoryUser;
 import com.example.auths3.repository.RoleRepository;
 import com.example.auths3.security.JwtTokenProvider;
+import com.example.auths3.service.UserMapper;
+import com.example.auths3.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -77,6 +80,16 @@ public class AuthController {
         repositoryUser.save(user);
         return ResponseEntity.ok(Map.of("message", "Usuario registrado exitosamente","email",user.getEmail()));
     }
+
+    @GetMapping("/me")
+    public ResponseEntity<UserDTO>getProfile(@AuthenticationPrincipal UserDetails userDetails){
+        String email = userDetails.getUsername();
+        User user = repositoryUser.findByEmail(email)
+                .orElseThrow(()-> new RuntimeException("Usuario existente"));
+        UserDTO dto = UserMapper.userDTO(user);
+        return ResponseEntity.ok(dto);
+    }
+
 }
 record LoginRequest(String email, String password) {}
 record LoginResponse(String token) {}
