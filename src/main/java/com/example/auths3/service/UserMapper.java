@@ -13,6 +13,6 @@ public class UserMapper {
                 .map(Role::getName)
                 .collect(Collectors.toList());
 
-        return new UserDTO(user.getId(), user.getName(), user.getEmail(), roleName);
+        return new UserDTO(user.getId(), user.getName(), user.getEmail(), user.getProfileImageUrl(), roleName);
     }
 }

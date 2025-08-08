@@ -24,6 +24,10 @@ public class User {
     private String email;
 
     @NotBlank
+    @Column(nullable = false)
+    private String profileImageUrl;
+
+    @NotBlank
     @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(nullable = false)
     private String passwordHash;
@@ -50,6 +54,8 @@ public class User {
     public String getName() {return name;}
     public void setEmail(String email) {this.email = email;}
     public String getEmail() {return email;}
+    public void setProfileImageUrl(String profileImageUrl) {this.profileImageUrl = profileImageUrl;}
+    public String getProfileImageUrl() {return profileImageUrl;}
     public void setPasswordHash(String passwordHash) {this.passwordHash = passwordHash;}
     public String getPasswordHash() {return passwordHash;}
     public void setRoles(Set<Role> roles) {this.roles = roles;}

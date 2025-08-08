@@ -2,18 +2,22 @@ package com.example.auths3.dto;
 
 import java.util.List;
 
+import java.util.List;
+
 public class UserDTO {
     private Long id;
     private String name;
     private String email;
+    private String profileImage;
     private List<String> role;
 
 public UserDTO(){}
 
-public UserDTO(Long id, String name, String email, List<String> role){
+public UserDTO(Long id, String name, String email, String profileImage , List<String> role){
     this.id = id;
     this.name = name;
     this.email = email;
+    this.profileImage = profileImage;
     this.role = role;
 }
     //GETTERS & SETTERS
@@ -23,6 +27,8 @@ public UserDTO(Long id, String name, String email, List<String> role){
     public String getName() {return name;}
     public void setEmail(String email) {this.email = email;}
     public String getEmail() {return email;}
+    public void setProfileImage(String profileImage) {this.profileImage = profileImage;}
+    public String getProfileImage() {return profileImage;}
     public void setRole(List<String> role) {this.role = role;}
     public List<String> getRole() {return role;}
 }

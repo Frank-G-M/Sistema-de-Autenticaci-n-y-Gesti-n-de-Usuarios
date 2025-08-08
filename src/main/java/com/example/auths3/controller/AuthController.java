@@ -7,6 +7,8 @@ import com.example.auths3.repository.RepositoryUser;
 import com.example.auths3.repository.RoleRepository;
 import com.example.auths3.security.JwtTokenProvider;
 import com.example.auths3.service.UserMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -16,9 +18,16 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+
+import java.io.IOException;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -30,6 +39,11 @@ public class AuthController {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private S3Client s3Client;
+
+    @Value("${aws.s3.bucket-name}")
+    private String bucketName;
 
     public AuthController(AuthenticationManager authManager, JwtTokenProvider tokenProvider, RepositoryUser repositoryUser, RoleRepository roleRepository, PasswordEncoder passwordEncoder){
         this.authManager = authManager;
@@ -40,7 +54,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?>login(@RequestBody LoginRequest req){
+    public ResponseEntity<?>login(@org.springframework.web.bind.annotation.RequestBody LoginRequest req){
         try{
             Authentication authentication = authManager.authenticate(new UsernamePasswordAuthenticationToken(req.email(), req.password()));
             String token = tokenProvider.generateToken(req.email());
@@ -51,32 +65,66 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<?>signup(@RequestBody SignupRequest signupRequest){
-        if (repositoryUser.existsByEmail(signupRequest.email())){
+    public ResponseEntity<?>signup(@RequestPart("userData") SignupRequest signupRequest, @RequestPart(value = "profileImage", required = false)MultipartFile file) {
+
+        if (repositoryUser.existsByEmail(signupRequest.email())) {
             return ResponseEntity.badRequest().body("Error: Email ya esta en uso");
         }
+        SignupRequest updatedRequest = file != null ?
+                new SignupRequest(
+                        signupRequest.name(),
+                        signupRequest.email(),
+                        signupRequest.password(),
+                        signupRequest.roles(),
+                        file
+                ) : signupRequest;
 
-        User user = new User(signupRequest.name(),signupRequest.email(),passwordEncoder.encode(signupRequest.password()));
+        User user = new User(signupRequest.name(), signupRequest.email(), passwordEncoder.encode(signupRequest.password()));
 
-        Set<Role> roles = new HashSet<>();
-
-        if(signupRequest.roles()==null || signupRequest.roles().isEmpty()){
-            signupRequest= new SignupRequest(
-                    signupRequest.name(),
-                    signupRequest.email(),
-                    signupRequest.password(),
-                    Set.of("USER")
-            );
+        if (updatedRequest.profileImage() != null && !updatedRequest.profileImage().isEmpty()) {
+            String imageUrl = uploadImageToS3(updatedRequest.profileImage());
+            user.setProfileImageUrl(imageUrl);
         }
 
-        signupRequest.roles().forEach(role -> {
-            Role userRole = roleRepository.findByName(role)
-                    .orElseThrow(() -> new RuntimeException("Error: Rol '" + role + "' no encontrado"));
+        Set<Role> roles = new HashSet<>();
+        Set<String> requestRoles = updatedRequest.roles() != null ?
+                updatedRequest.roles() : Set.of("USER");
+
+        requestRoles.forEach(role -> {
+            Role userRole = roleRepository.findByName(role).orElseThrow(() -> new RuntimeException("Error: Rol '" + role + "' no encontrado"));
             roles.add(userRole);
         });
         user.setRoles(roles);
         repositoryUser.save(user);
-        return ResponseEntity.ok(Map.of("message", "Usuario registrado exitosamente","email",user.getEmail()));
+
+        return ResponseEntity.ok(Map.of("message", "Usuario registrado correctamente", "email", user.getEmail(), "imageUrl", user.getProfileImageUrl()));
+    }
+    private String uploadImageToS3(MultipartFile file) {
+        String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+        try {
+            // Versión más explícita
+            software.amazon.awssdk.core.sync.RequestBody requestBody =
+                    software.amazon.awssdk.core.sync.RequestBody.fromInputStream(
+                            file.getInputStream(),
+                            file.getSize()
+                    );
+
+            s3Client.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(bucketName)
+                            .key(fileName)
+                            .acl(ObjectCannedACL.PUBLIC_READ)
+                            .build(),
+                    requestBody
+            );
+
+            return s3Client.utilities().getUrl(builder -> builder
+                    .bucket(bucketName)
+                    .key(fileName)
+            ).toString();
+        } catch (IOException e) {
+            throw new RuntimeException("Error al subir la imagen", e);
+        }
     }
 
     @GetMapping("/me")
@@ -91,4 +139,4 @@ public class AuthController {
 }
 record LoginRequest(String email, String password) {}
 record LoginResponse(String token) {}
-record SignupRequest(String name, String email, String password, Set<String> roles){ public  SignupRequest{roles = roles!=null? roles:Set.of("USER");}}
+record SignupRequest(String name, String email, String password, Set<String> roles, MultipartFile profileImage){ public  SignupRequest{roles = roles!=null? roles:Set.of("USER");}}
