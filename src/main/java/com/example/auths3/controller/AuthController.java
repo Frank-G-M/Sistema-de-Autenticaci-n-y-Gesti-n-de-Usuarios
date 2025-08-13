@@ -114,14 +114,14 @@ public class AuthController {
                             file.getInputStream(),
                             file.getSize()
                     );
-            s3Client.putObject(
-                    PutObjectRequest.builder()
-                            .bucket(bucketName)
-                            .key(fileName)
-                            .contentType(file.getContentType())
-                            .build(),
-                    requestBody
-            );
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(fileName)
+                    .contentType(file.getContentType())
+                    .build();
+            s3Client.putObject(putObjectRequest,requestBody);
+
+
             return s3Client.utilities().getUrl(builder -> builder
                     .bucket(bucketName)
                     .key(fileName)
