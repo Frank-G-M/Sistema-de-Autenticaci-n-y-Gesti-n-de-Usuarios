@@ -1,14 +1,16 @@
 package com.example.auths3.controller;
 
-import com.example.auths3.dto.UserDTO;
+import com.example.auths3.dto.*;
 import com.example.auths3.model.Role;
 import com.example.auths3.model.User;
 import com.example.auths3.repository.RepositoryUser;
 import com.example.auths3.repository.RoleRepository;
 import com.example.auths3.security.JwtTokenProvider;
 import com.example.auths3.service.UserMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -20,14 +22,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -54,76 +53,81 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?>login(@org.springframework.web.bind.annotation.RequestBody LoginRequest req){
+    public ResponseEntity<?>login(@RequestBody LoginRequestDTO req){
         try{
-            Authentication authentication = authManager.authenticate(new UsernamePasswordAuthenticationToken(req.email(), req.password()));
-            String token = tokenProvider.generateToken(req.email());
+            Authentication authentication = authManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
+            String token = tokenProvider.generateToken(req.getEmail());
             return ResponseEntity.ok(new LoginResponse(token));
         }catch (AuthenticationException e){
             return ResponseEntity.status(401).body("Credenciales invalidas");
         }
     }
 
-    @PostMapping("/signup")
-    public ResponseEntity<?>signup(@RequestPart("userData") SignupRequest signupRequest, @RequestPart(value = "profileImage", required = false)MultipartFile file) {
-
-        if (repositoryUser.existsByEmail(signupRequest.email())) {
-            return ResponseEntity.badRequest().body("Error: Email ya esta en uso");
+    @PostMapping(value = "/signup", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<?>>signup(
+            @RequestPart("userData") String userDataStr,
+            @RequestPart(value = "profileImage", required = false)MultipartFile file) {
+        System.out.println("Bucktname name: "+bucketName);
+        ObjectMapper mapper = new ObjectMapper();
+        SignupRequestDTO signupRequest;
+        try {
+            signupRequest = mapper.readValue(userDataStr, SignupRequestDTO.class);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(false, "Formato JSON inválido", null));
         }
-        SignupRequest updatedRequest = file != null ?
-                new SignupRequest(
-                        signupRequest.name(),
-                        signupRequest.email(),
-                        signupRequest.password(),
-                        signupRequest.roles(),
-                        file
-                ) : signupRequest;
-
-        User user = new User(signupRequest.name(), signupRequest.email(), passwordEncoder.encode(signupRequest.password()));
-
-        if (updatedRequest.profileImage() != null && !updatedRequest.profileImage().isEmpty()) {
-            String imageUrl = uploadImageToS3(updatedRequest.profileImage());
-            user.setProfileImageUrl(imageUrl);
+        try {
+            s3Client.headBucket(b -> b.bucket(bucketName));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "Error con S3: " + e.getMessage(), null));
         }
 
-        Set<Role> roles = new HashSet<>();
-        Set<String> requestRoles = updatedRequest.roles() != null ?
-                updatedRequest.roles() : Set.of("USER");
-
-        requestRoles.forEach(role -> {
-            Role userRole = roleRepository.findByName(role).orElseThrow(() -> new RuntimeException("Error: Rol '" + role + "' no encontrado"));
-            roles.add(userRole);
-        });
+        if (repositoryUser.existsByEmail(signupRequest.getEmail())) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(false, "El email ya está registrado", null));
+        }
+        User user = new User();
+        user.setName(signupRequest.getName());
+        user.setEmail(signupRequest.getEmail());
+        user.setPasswordHash(passwordEncoder.encode(signupRequest.getPassword()));
+        if (file != null && !file.isEmpty()){
+            user.setProfileImageUrl(uploadImageToS3(file));
+        }
+        Set<Role>roles=signupRequest.getRoles().stream().map(roleName->roleRepository.findByName(roleName).orElseThrow(()->new RuntimeException("ROL no encontrado: "+roleName))).collect(Collectors.toSet());
         user.setRoles(roles);
-        repositoryUser.save(user);
-
-        return ResponseEntity.ok(Map.of("message", "Usuario registrado correctamente", "email", user.getEmail(), "imageUrl", user.getProfileImageUrl()));
+        User savedUser=repositoryUser.save(user);
+        UserDTO response = new UserDTO();
+        response.setId(savedUser.getId());
+        response.setName(savedUser.getName());
+        response.setEmail(savedUser.getEmail());
+        response.setProfileImage(savedUser.getProfileImageUrl());
+        response.setRole(savedUser.getRoles().stream().map(Role::getName).collect(Collectors.toList()));
+        return ResponseEntity.ok(new ApiResponse<>(true, "Registro exitoso", response));
     }
     private String uploadImageToS3(MultipartFile file) {
         String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
         try {
-            // Versión más explícita
             software.amazon.awssdk.core.sync.RequestBody requestBody =
                     software.amazon.awssdk.core.sync.RequestBody.fromInputStream(
                             file.getInputStream(),
                             file.getSize()
                     );
-
             s3Client.putObject(
                     PutObjectRequest.builder()
                             .bucket(bucketName)
                             .key(fileName)
-                            .acl(ObjectCannedACL.PUBLIC_READ)
+                            .contentType(file.getContentType())
                             .build(),
                     requestBody
             );
-
             return s3Client.utilities().getUrl(builder -> builder
                     .bucket(bucketName)
                     .key(fileName)
             ).toString();
         } catch (IOException e) {
-            throw new RuntimeException("Error al subir la imagen", e);
+            throw new RuntimeException("Error al subir la imagen"+e.getMessage(),e);
         }
     }
 

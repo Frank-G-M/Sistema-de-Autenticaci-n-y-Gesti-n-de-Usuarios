@@ -2,8 +2,6 @@ package com.example.auths3.dto;
 
 import java.util.List;
 
-import java.util.List;
-
 public class UserDTO {
     private Long id;
     private String name;
