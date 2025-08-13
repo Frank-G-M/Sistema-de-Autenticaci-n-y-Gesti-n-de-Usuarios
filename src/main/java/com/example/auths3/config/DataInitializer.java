@@ -14,18 +14,18 @@ public class DataInitializer {
         this.roleRepository = roleRepository;
     }
 
-@PostConstruct
-    public void init(){
-        if (roleRepository.findByName("USER").isEmpty()){
-            Role userRole = new Role("USER");
+    @PostConstruct
+    public void init() {
+        if (roleRepository.findByName("ROLE_USER").isEmpty()) {
+            Role userRole = new Role("ROLE_USER");
             userRole.setDescription("Rol General");
             roleRepository.save(userRole);
         }
 
-        if (roleRepository.findByName("ADMIN").isEmpty()){
-            Role adminRole = new Role("ADMIN");
+        if (roleRepository.findByName("ROLE_ADMIN").isEmpty()) {
+            Role adminRole = new Role("ROLE_ADMIN");
             adminRole.setDescription("ROL ADMINISTRATIVO");
             roleRepository.save(adminRole);
         }
-}
+    }
 }

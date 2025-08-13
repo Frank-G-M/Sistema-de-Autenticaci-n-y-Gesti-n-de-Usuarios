@@ -95,7 +95,11 @@ public class AuthController {
         if (file != null && !file.isEmpty()){
             user.setProfileImageUrl(uploadImageToS3(file));
         }
-        Set<Role>roles=signupRequest.getRoles().stream().map(roleName->roleRepository.findByName(roleName).orElseThrow(()->new RuntimeException("ROL no encontrado: "+roleName))).collect(Collectors.toSet());
+        Set<Role>roles=signupRequest.getRoles().stream()
+                .map(roleName-> {
+                            String fullRoleName = roleName.startsWith("ROLE_") ? roleName : "ROLE_" + roleName;
+                            return roleRepository.findByName(fullRoleName).orElseThrow(() -> new RuntimeException("ROL no encontrado: " + fullRoleName));
+                        }).collect(Collectors.toSet());
         user.setRoles(roles);
         User savedUser=repositoryUser.save(user);
         UserDTO response = new UserDTO();
@@ -143,4 +147,4 @@ public class AuthController {
 }
 record LoginRequest(String email, String password) {}
 record LoginResponse(String token) {}
-record SignupRequest(String name, String email, String password, Set<String> roles, MultipartFile profileImage){ public  SignupRequest{roles = roles!=null? roles:Set.of("USER");}}
+record SignupRequest(String name, String email, String password, Set<String> roles, MultipartFile profileImage){ public  SignupRequest{roles = roles!=null? roles:Set.of("ROLE_USER");}}
