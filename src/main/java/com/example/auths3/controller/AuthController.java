@@ -1,12 +1,16 @@
 package com.example.auths3.controller;
 
-import com.example.auths3.dto.UserDTO;
+import com.example.auths3.dto.*;
 import com.example.auths3.model.Role;
 import com.example.auths3.model.User;
 import com.example.auths3.repository.RepositoryUser;
 import com.example.auths3.repository.RoleRepository;
 import com.example.auths3.security.JwtTokenProvider;
 import com.example.auths3.service.UserMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -16,9 +20,13 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import java.util.HashSet;
-import java.util.Map;
+import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import java.io.IOException;
 import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -30,6 +38,11 @@ public class AuthController {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private S3Client s3Client;
+
+    @Value("${aws.s3.bucket-name}")
+    private String bucketName;
 
     public AuthController(AuthenticationManager authManager, JwtTokenProvider tokenProvider, RepositoryUser repositoryUser, RoleRepository roleRepository, PasswordEncoder passwordEncoder){
         this.authManager = authManager;
@@ -40,43 +53,86 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?>login(@RequestBody LoginRequest req){
+    public ResponseEntity<?>login(@RequestBody LoginRequestDTO req){
         try{
-            Authentication authentication = authManager.authenticate(new UsernamePasswordAuthenticationToken(req.email(), req.password()));
-            String token = tokenProvider.generateToken(req.email());
+            Authentication authentication = authManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
+            String token = tokenProvider.generateToken(req.getEmail());
             return ResponseEntity.ok(new LoginResponse(token));
         }catch (AuthenticationException e){
             return ResponseEntity.status(401).body("Credenciales invalidas");
         }
     }
 
-    @PostMapping("/signup")
-    public ResponseEntity<?>signup(@RequestBody SignupRequest signupRequest){
-        if (repositoryUser.existsByEmail(signupRequest.email())){
-            return ResponseEntity.badRequest().body("Error: Email ya esta en uso");
+    @PostMapping(value = "/signup", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<?>>signup(
+            @RequestPart("userData") String userDataStr,
+            @RequestPart(value = "profileImage", required = false)MultipartFile file) {
+        System.out.println("Bucktname name: "+bucketName);
+        ObjectMapper mapper = new ObjectMapper();
+        SignupRequestDTO signupRequest;
+        try {
+            signupRequest = mapper.readValue(userDataStr, SignupRequestDTO.class);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(false, "Formato JSON inválido", null));
+        }
+        try {
+            s3Client.headBucket(b -> b.bucket(bucketName));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ApiResponse<>(false, "Error con S3: " + e.getMessage(), null));
         }
 
-        User user = new User(signupRequest.name(),signupRequest.email(),passwordEncoder.encode(signupRequest.password()));
-
-        Set<Role> roles = new HashSet<>();
-
-        if(signupRequest.roles()==null || signupRequest.roles().isEmpty()){
-            signupRequest= new SignupRequest(
-                    signupRequest.name(),
-                    signupRequest.email(),
-                    signupRequest.password(),
-                    Set.of("USER")
-            );
+        if (repositoryUser.existsByEmail(signupRequest.getEmail())) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(false, "El email ya está registrado", null));
         }
-
-        signupRequest.roles().forEach(role -> {
-            Role userRole = roleRepository.findByName(role)
-                    .orElseThrow(() -> new RuntimeException("Error: Rol '" + role + "' no encontrado"));
-            roles.add(userRole);
-        });
+        User user = new User();
+        user.setName(signupRequest.getName());
+        user.setEmail(signupRequest.getEmail());
+        user.setPasswordHash(passwordEncoder.encode(signupRequest.getPassword()));
+        if (file != null && !file.isEmpty()){
+            user.setProfileImageUrl(uploadImageToS3(file));
+        }
+        Set<Role>roles=signupRequest.getRoles().stream()
+                .map(roleName-> {
+                            String fullRoleName = roleName.startsWith("ROLE_") ? roleName : "ROLE_" + roleName;
+                            return roleRepository.findByName(fullRoleName).orElseThrow(() -> new RuntimeException("ROL no encontrado: " + fullRoleName));
+                        }).collect(Collectors.toSet());
         user.setRoles(roles);
-        repositoryUser.save(user);
-        return ResponseEntity.ok(Map.of("message", "Usuario registrado exitosamente","email",user.getEmail()));
+        User savedUser=repositoryUser.save(user);
+        UserDTO response = new UserDTO();
+        response.setId(savedUser.getId());
+        response.setName(savedUser.getName());
+        response.setEmail(savedUser.getEmail());
+        response.setProfileImage(savedUser.getProfileImageUrl());
+        response.setRole(savedUser.getRoles().stream().map(Role::getName).collect(Collectors.toList()));
+        return ResponseEntity.ok(new ApiResponse<>(true, "Registro exitoso", response));
+    }
+    private String uploadImageToS3(MultipartFile file) {
+        String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+        try {
+            software.amazon.awssdk.core.sync.RequestBody requestBody =
+                    software.amazon.awssdk.core.sync.RequestBody.fromInputStream(
+                            file.getInputStream(),
+                            file.getSize()
+                    );
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(fileName)
+                    .contentType(file.getContentType())
+                    .build();
+            s3Client.putObject(putObjectRequest,requestBody);
+
+
+            return s3Client.utilities().getUrl(builder -> builder
+                    .bucket(bucketName)
+                    .key(fileName)
+            ).toString();
+        } catch (IOException e) {
+            throw new RuntimeException("Error al subir la imagen"+e.getMessage(),e);
+        }
     }
 
     @GetMapping("/me")
@@ -91,4 +147,4 @@ public class AuthController {
 }
 record LoginRequest(String email, String password) {}
 record LoginResponse(String token) {}
-record SignupRequest(String name, String email, String password, Set<String> roles){ public  SignupRequest{roles = roles!=null? roles:Set.of("USER");}}
+record SignupRequest(String name, String email, String password, Set<String> roles, MultipartFile profileImage){ public  SignupRequest{roles = roles!=null? roles:Set.of("ROLE_USER");}}
