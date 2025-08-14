@@ -10,6 +10,8 @@ import com.example.auths3.service.UserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -29,7 +31,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api")
 public class AuthController {
 
     private final AuthenticationManager authManager;
@@ -52,7 +54,7 @@ public class AuthController {
         this.passwordEncoder = passwordEncoder;
     }
 
-    @PostMapping("/login")
+    @PostMapping("/auth/login")
     public ResponseEntity<?>login(@RequestBody LoginRequestDTO req){
         try{
             Authentication authentication = authManager.authenticate(
@@ -64,7 +66,7 @@ public class AuthController {
         }
     }
 
-    @PostMapping(value = "/signup", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = "/auth/signup", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<?>>signup(
             @RequestPart("userData") String userDataStr,
             @RequestPart(value = "profileImage", required = false)MultipartFile file) {
@@ -135,7 +137,7 @@ public class AuthController {
         }
     }
 
-    @GetMapping("/me")
+    @GetMapping("/auth/me")
     public ResponseEntity<UserDTO>getProfile(@AuthenticationPrincipal UserDetails userDetails){
         String email = userDetails.getUsername();
         User user = repositoryUser.findByEmail(email)
@@ -143,6 +145,47 @@ public class AuthController {
         UserDTO dto = UserMapper.userDTO(user);
         return ResponseEntity.ok(dto);
     }
+
+    @PutMapping(value = "/users/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?>updateProfilePhoto(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestPart("profileImage")MultipartFile file){
+        try {
+            String email = userDetails.getUsername();
+            User user = repositoryUser.findByEmail(email).orElseThrow(()->new RuntimeException("Usuario no encontrado"));
+
+            String newImageUrl = uploadImageToS3(file);
+
+            if(user.getProfileImageUrl() != null && !user.getProfileImageUrl().isEmpty()){
+                deleteImageFromS3(user.getProfileImageUrl());
+            }
+            user.setProfileImageUrl(newImageUrl);
+            repositoryUser.save(user);
+
+            UserDTO response = new UserDTO();
+            response.setId(user.getId());
+            response.setName(user.getName());
+            response.setEmail(user.getEmail());
+            response.setProfileImage(user.getProfileImageUrl());
+            response.setRole(user.getRoles().stream().map(Role::getName).collect(Collectors.toList()));
+
+            return ResponseEntity.ok(new ApiResponse<>(true, "Foto actualizada",response));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<>(false,"Error en actualizar imagen: "+e.getMessage(),null));
+        }
+    }
+    private void deleteImageFromS3(String imageUrl){
+        try {
+            String key = imageUrl.substring(imageUrl.lastIndexOf("/")+1);
+            s3Client.deleteObject(builder -> builder
+                    .bucket(bucketName)
+                    .key(key)
+                    .build());
+        } catch (Exception e) {
+            System.err.println("Error al eliminar imagen: "+e.getMessage());
+        }
+    }
+
 
 }
 record LoginRequest(String email, String password) {}
