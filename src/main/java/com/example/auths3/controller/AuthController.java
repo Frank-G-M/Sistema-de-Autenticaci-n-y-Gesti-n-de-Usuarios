@@ -11,7 +11,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -26,6 +25,8 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -90,12 +91,20 @@ public class AuthController {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse<>(false, "El email ya está registrado", null));
         }
+        if (file!=null&&!file.isEmpty()) {
+            ResponseEntity<ApiResponse<?>> validationResult = validateImageFile(file);
+            if (validationResult != null) {
+                return validationResult;
+            }
+        }
         User user = new User();
         user.setName(signupRequest.getName());
         user.setEmail(signupRequest.getEmail());
         user.setPasswordHash(passwordEncoder.encode(signupRequest.getPassword()));
-        if (file != null && !file.isEmpty()){
+        if (file!=null&&!file.isEmpty()){
             user.setProfileImageUrl(uploadImageToS3(file));
+        }else{
+            user.setProfileImageUrl("https://bucket-users-2025.s3.us-east-1.amazonaws.com/default.jpg");
         }
         Set<Role>roles=signupRequest.getRoles().stream()
                 .map(roleName-> {
@@ -111,6 +120,28 @@ public class AuthController {
         response.setProfileImage(savedUser.getProfileImageUrl());
         response.setRole(savedUser.getRoles().stream().map(Role::getName).collect(Collectors.toList()));
         return ResponseEntity.ok(new ApiResponse<>(true, "Registro exitoso", response));
+    }
+    private ResponseEntity<ApiResponse<?>>validateImageFile(MultipartFile file){
+            String contentType = file.getContentType();
+            if (contentType == null || !contentType.startsWith("image/")){
+                return ResponseEntity.badRequest().body(new ApiResponse<>(false,"El archivo debe ser una imagen", null));
+            }
+            List<String>allowedTypes = Arrays.asList("image/png","image/jpeg", "image/jpg");
+            if (!allowedTypes.contains(contentType)){
+                return ResponseEntity.badRequest().body(new ApiResponse<>(false,"Solo se permite imagenes PNG o JPG", null));
+            }
+            long maxSize = 5 * 1024 *1024;
+            if (file.getSize()>maxSize){
+                return ResponseEntity.badRequest().body(new ApiResponse<>(false, "La imagen no puede exceder los 5MB",null));
+            }
+            String originalFilename = file.getOriginalFilename();
+            if (originalFilename!=null){
+                String extencion = originalFilename.substring(originalFilename.lastIndexOf(".")+1).toLowerCase();
+                if (!Arrays.asList("png", "jpg", "jpeg").contains(extencion)){
+                    return ResponseEntity.badRequest().body(new ApiResponse<>(false,"Extencion de arcghivo no permitido", null));
+                }
+            }
+            return null;
     }
     private String uploadImageToS3(MultipartFile file) {
         String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
@@ -150,6 +181,10 @@ public class AuthController {
     public ResponseEntity<?>updateProfilePhoto(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestPart("profileImage")MultipartFile file){
+        ResponseEntity<ApiResponse<?>>validatedResult = validateImageFile(file);
+        if (validatedResult!=null) {
+            return validatedResult;
+        }
         try {
             String email = userDetails.getUsername();
             User user = repositoryUser.findByEmail(email).orElseThrow(()->new RuntimeException("Usuario no encontrado"));
@@ -185,8 +220,6 @@ public class AuthController {
             System.err.println("Error al eliminar imagen: "+e.getMessage());
         }
     }
-
-
 }
 record LoginRequest(String email, String password) {}
 record LoginResponse(String token) {}
