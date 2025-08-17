@@ -1,19 +1,16 @@
 package com.example.auths3.controller;
 
-
 import com.example.auths3.service.IS3Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.List;
 
 @RestController
 @RequestMapping("s3")
@@ -23,18 +20,6 @@ public class appController {
     private String destinationFolder;
     @Autowired
     private IS3Service service;
-    @PostMapping("/create")
-    public ResponseEntity<String> createBucket(@RequestParam String bucketName){
-        return ResponseEntity.ok(this.service.createBucket(bucketName));
-    }
-    @GetMapping("/check/{bucketName}")
-    public ResponseEntity<String> checkBucket(@PathVariable String bucketName){
-        return ResponseEntity.ok(this.service.validatedBucket(bucketName));
-    }
-    @GetMapping("/list")
-    public ResponseEntity<List<String>> listBuckets(){
-        return ResponseEntity.ok(this.service.getAllBucket());
-    }
     @PostMapping("/upload")
     public ResponseEntity<String> uploadFile(@RequestParam String bucketName, @RequestParam String key,@RequestPart MultipartFile file)throws IOException{
         try{
@@ -74,3 +59,11 @@ public class appController {
         return ResponseEntity.ok(this.service.generetePresignedDownloadUrl(bucketName, key, durationToLive));
     }
 }
+//Controlador REST expone 4 end-points relacionado con archivos S3
+//POST /s3/upload → Subir archivo al bucket
+//
+//POST /s3/download → Descargar archivo desde S3
+//
+//POST /s3/upload/presigned → Generar URL temporal para que suba directo a S3.
+//
+//POST /s3/download/presigned → Generar URL temporal para que descargue directo desde S3.

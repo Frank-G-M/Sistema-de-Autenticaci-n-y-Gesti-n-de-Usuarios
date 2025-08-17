@@ -17,13 +17,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
 import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
-
+//CADENA DE FILTROS DE SEGURIDAD
 @Bean
     public SecurityFilterChain filterChain(org.springframework.security.config.annotation.web.builders.HttpSecurity http, JwtAuthenticationFilter jwtFilter)throws Exception{
     http.csrf(csrf->csrf.disable())
@@ -38,22 +37,22 @@ public class SecurityConfig {
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
             return http.build();
 }
-
+//Crea y expone el filtro de autenticación basado en JWT
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter(JwtTokenProvider tokenProvider) {
         return new JwtAuthenticationFilter(tokenProvider);
     }
-
+//Encriptar la contraseña
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
-
+//Es el que autentica a los usuarios en el login, comprobando credenciales
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
         return cfg.getAuthenticationManager();
     }
-
+//Para que se comunique con posibles Front-End externos
 @Bean
     public CorsConfigurationSource corsConfigurationSource(){
     CorsConfiguration cfg = new CorsConfiguration();

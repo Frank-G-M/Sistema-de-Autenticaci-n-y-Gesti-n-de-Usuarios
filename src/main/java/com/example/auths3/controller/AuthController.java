@@ -224,3 +224,8 @@ public class AuthController {
 record LoginRequest(String email, String password) {}
 record LoginResponse(String token) {}
 record SignupRequest(String name, String email, String password, Set<String> roles, MultipartFile profileImage){ public  SignupRequest{roles = roles!=null? roles:Set.of("ROLE_USER");}}
+//Este AuthController hace lo relacionado con usuarios y autenticación:
+//Login con JWT (/auth/login).
+//Registro con foto opcional en S3 (/auth/signup).
+//Obtener perfil del usuario logueado (/auth/me).
+//Actualizar foto de perfil en S3 (/users/photo).
