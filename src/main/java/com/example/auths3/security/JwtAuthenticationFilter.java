@@ -1,6 +1,5 @@
 package com.example.auths3.security;
 
-
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

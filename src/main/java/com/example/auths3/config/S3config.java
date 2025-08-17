@@ -9,19 +9,18 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-
 import java.net.URI;
 
 @Configuration
 public class S3config {
-
+//INYECCION DE PROPIEDADES AWS (S3)
     @Value("${aws.access.key}")
     private String awsAccessKey;
     @Value("${aws.secret.key}")
     private String awsSecretKey;
     @Value("${aws.region}")
     private String region;
-
+//OPERACIONES DIRECTAS AL S3
     @Bean
     public S3Client getS3Client(){
         AwsCredentials basicCredentials = AwsBasicCredentials.create(awsAccessKey,awsSecretKey);
@@ -31,6 +30,7 @@ public class S3config {
                 .credentialsProvider(StaticCredentialsProvider.create(basicCredentials))
                 .build();
     }
+    //GENERAR URLS TEMPORALES
     @Bean
     public S3Presigner getS3Presigner(){
         AwsCredentials basicCredentials = AwsBasicCredentials.create(awsAccessKey,awsSecretKey);
