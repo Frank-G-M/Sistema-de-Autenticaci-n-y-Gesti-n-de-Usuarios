@@ -18,9 +18,9 @@ services:
   db:
     image: postgres:13-alpine
     environment:
-      - POSTGRES_DB=
-      - POSTGRES_USER=
-      - POSTGRES_PASSWORD=
+      - POSTGRES_DB=auths3
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=FrankGuerrero
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
